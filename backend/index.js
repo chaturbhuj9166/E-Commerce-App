@@ -23,17 +23,9 @@ const app = express();
 dotenv.config();
 
 
-app.use(
-  cors({
-    origin: [
-      "http://localhost:5173", // web
-      "https://new-ecommerce-t48z.onrender.com", // deployed web
-      "exp://10.11.4.115:8081",
-      "http://localhost:8081" // 👈 Expo (React Native)
-    ],
-    credentials: true,
-  })
-);
+app.use(cors({
+  origin: "*",
+}));
 
 // Allow postMessage from Google popups — relax COOP to allow popups
 app.use((req, res, next) => {
