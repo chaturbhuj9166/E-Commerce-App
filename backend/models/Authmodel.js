@@ -50,10 +50,6 @@ const authSchema = new Schema(
       sparse: true,
     },
 
-    // 🔐 OTP FIELDS
-    otp: String,
-    otpExpire: Date,
-    isVerified: { type: Boolean, default: false },
     isBlocked: { type: Boolean, default: false },
   },
   { timestamps: true }

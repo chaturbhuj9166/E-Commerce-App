@@ -1,13 +1,8 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import Auth from "../models/Authmodel.js";
-import { generateOTP } from "../utils/otp.js";
-import { sendOtpEmail, sendWelcomeEmail } from "../utils/sendEmail.js";
-
-const OTP_EXPIRY_MS = 5 * 60 * 1000;
 
 const normalizeEmail = (email = "") => email.trim().toLowerCase();
-const normalizeOtp = (otp = "") => otp.toString().trim();
 
 // ================= REGISTER =================
 export async function registerUser(req, res) {
@@ -22,119 +17,34 @@ export async function registerUser(req, res) {
       return res.status(400).json({ message: "All fields required" });
     }
 
-    const existingUser = await Auth.findOne({
-      $or: [{ email }, { username }],
-    });
-
-    if (existingUser?.isVerified) {
-      if (existingUser.email === email) {
-        return res.status(400).json({ message: "User already exists" });
-      }
-
-      return res.status(400).json({ message: "Username already exists" });
+    const existingEmail = await Auth.findOne({ email });
+    if (existingEmail) {
+      return res.status(400).json({ message: "User already exists" });
     }
 
-    if (existingUser && existingUser.email !== email && existingUser.username === username) {
+    const existingUsername = await Auth.findOne({ username });
+    if (existingUsername) {
       return res.status(400).json({ message: "Username already exists" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const otp = generateOTP();
-    const otpExpire = new Date(Date.now() + OTP_EXPIRY_MS);
 
-    if (existingUser) {
-      existingUser.name = name;
-      existingUser.email = email;
-      existingUser.username = username;
-      existingUser.phone = phone;
-      existingUser.password = hashedPassword;
-      existingUser.role = "user";
-      existingUser.otp = otp;
-      existingUser.otpExpire = otpExpire;
-      existingUser.isVerified = false;
-      existingUser.isBlocked = false;
-      await existingUser.save();
-    } else {
-      await Auth.create({
-        name,
-        email,
-        username,
-        phone,
-        password: hashedPassword,
-        role: "user",
-        otp,
-        otpExpire,
-        isVerified: false,
-        isBlocked: false,
-      });
-    }
-
-    try {
-      await sendOtpEmail(email, otp);
-    } catch (error) {
-      console.error("EMAIL ERROR:", error.message);
-      return res.status(502).json({
-        message: "Could not send OTP email. Please try again.",
-      });
-    }
-
-    return res.status(existingUser ? 200 : 201).json({
-      message: existingUser
-        ? "A new OTP has been sent to your email"
-        : "Registered successfully. OTP sent to email",
+    const user = await Auth.create({
+      name,
       email,
+      username,
+      phone,
+      password: hashedPassword,
+      role: "user",
+      isBlocked: false,
+    });
+
+    return res.status(201).json({
+      message: "Registered successfully",
+      user,
     });
   } catch (error) {
     console.error("REGISTER ERROR:", error);
-    return res.status(500).json({ message: error.message });
-  }
-}
-
-// ================= VERIFY OTP =================
-export async function verifyOtp(req, res) {
-  try {
-    const email = normalizeEmail(req.body.email);
-    const otp = normalizeOtp(req.body.otp);
-
-    if (!email || !otp) {
-      return res.status(400).json({ message: "Email & OTP required" });
-    }
-
-    const user = await Auth.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    if (user.isVerified) {
-      return res.status(200).json({ message: "Already verified" });
-    }
-
-    if (!user.otp || !user.otpExpire) {
-      return res.status(400).json({ message: "No active OTP found. Please register again." });
-    }
-
-    if (new Date() >= new Date(user.otpExpire)) {
-      return res.status(400).json({ message: "OTP expired" });
-    }
-
-    if (normalizeOtp(user.otp) !== otp) {
-      return res.status(400).json({ message: "Invalid OTP" });
-    }
-
-    user.isVerified = true;
-    user.otp = undefined;
-    user.otpExpire = undefined;
-    await user.save();
-
-    try {
-      await sendWelcomeEmail(user.email, user.name);
-    } catch (error) {
-      console.error("WELCOME EMAIL ERROR:", error.message);
-    }
-
-    return res.status(200).json({ message: "Email verified successfully" });
-  } catch (error) {
-    console.error("VERIFY OTP ERROR:", error);
     return res.status(500).json({ message: error.message });
   }
 }
@@ -152,10 +62,6 @@ export async function loginUsers(req, res) {
     const user = await Auth.findOne({ email });
     if (!user) {
       return res.status(400).json({ message: "Invalid email" });
-    }
-
-    if (!user.isVerified) {
-      return res.status(403).json({ message: "Verify your email first" });
     }
 
     if (user.isBlocked) {
@@ -207,7 +113,7 @@ export async function logoutUsers(req, res) {
 // ================= GET ALL USERS =================
 export async function getUsers(req, res) {
   try {
-    const users = await Auth.find().select("-password -otp -otpExpire");
+    const users = await Auth.find().select("-password");
     return res.status(200).json(users);
   } catch (error) {
     return res.status(500).json({ message: error.message });
